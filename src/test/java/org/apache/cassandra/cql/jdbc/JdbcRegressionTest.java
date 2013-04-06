@@ -30,6 +30,12 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.cassandra.cql.ConnectionDetails;
 import org.junit.AfterClass;
@@ -41,6 +47,7 @@ public class JdbcRegressionTest
     private static final String HOST = System.getProperty("host", ConnectionDetails.getHost());
     private static final int PORT = Integer.parseInt(System.getProperty("port", ConnectionDetails.getPort()+""));
     private static final String KEYSPACE = "testks";
+    private static final String TABLE = "regressiontest";
 //    private static final String CQLV3 = "3.0.0";
       
     private static java.sql.Connection con = null;
@@ -74,7 +81,7 @@ public class JdbcRegressionTest
         stmt.execute(useKS);
         
         // Create the target Column family
-        String createCF = "CREATE COLUMNFAMILY regressiontest (keyname text PRIMARY KEY," 
+        String createCF = "CREATE COLUMNFAMILY "+TABLE+" (keyname text PRIMARY KEY,"
                         + " bValue boolean,"
                         + " iValue int"
                         + ");";
@@ -97,11 +104,10 @@ public class JdbcRegressionTest
     }
 
 
-
     @Test
     public void testIssue10() throws Exception
     {
-        String insert = "INSERT INTO regressiontest (keyname,bValue,iValue) VALUES( 'key0','true', 2000);";
+        String insert = "INSERT INTO regressiontest (keyname,bValue,iValue) VALUES( 'key0',true, 2000);";
         Statement statement = con.createStatement();
 
         statement.executeUpdate(insert);
@@ -141,10 +147,10 @@ public class JdbcRegressionTest
        String truncate = "TRUNCATE regressiontest;";
        statement.execute(truncate);
        
-       String insert1 = "INSERT INTO regressiontest (keyname,bValue,iValue) VALUES( 'key0','true', 2000);";
+       String insert1 = "INSERT INTO regressiontest (keyname,bValue,iValue) VALUES( 'key0',true, 2000);";
        statement.executeUpdate(insert1);
        
-       String insert2 = "INSERT INTO regressiontest (keyname,bValue) VALUES( 'key1','false');";
+       String insert2 = "INSERT INTO regressiontest (keyname,bValue) VALUES( 'key1',false);";
        statement.executeUpdate(insert2);
        
        
@@ -251,7 +257,182 @@ public class JdbcRegressionTest
             System.out.println("beforeFirst() test -> "+ e);
         }
         
-}
+    }
+    
+    @Test
+    public void testIssue40() throws Exception
+    {
+        DatabaseMetaData md = con.getMetaData();
+        System.out.println();
+        System.out.println("Test Issue #40");
+        System.out.println("--------------");
+
+        // test various retrieval methods
+        ResultSet result = md.getTables(con.getCatalog(), null, "%", new String[]
+        { "TABLE" });
+        assertTrue("Make sure we have found a table", result.next());
+        result = md.getTables(null, KEYSPACE, TABLE, null);
+        assertTrue("Make sure we have found the table asked for", result.next());
+        result = md.getTables(null, KEYSPACE, TABLE, new String[]
+        { "TABLE" });
+        assertTrue("Make sure we have found the table asked for", result.next());
+        result = md.getTables(con.getCatalog(), KEYSPACE, TABLE, new String[]
+        { "TABLE" });
+        assertTrue("Make sure we have found the table asked for", result.next());
+
+        // check the table name
+        String tn = result.getString("TABLE_NAME");
+        assertEquals("Table name match", TABLE, tn);
+        System.out.println("Found table via dmd    :   " + tn);
+
+        // load the columns
+        result = md.getColumns(con.getCatalog(), KEYSPACE, TABLE, null);
+        assertTrue("Make sure we have found first column", result.next());
+        assertEquals("Make sure table name match", TABLE, result.getString("TABLE_NAME"));
+        String cn = result.getString("COLUMN_NAME");
+        System.out.println("Found column       :   " + cn);
+        assertEquals("Column name check", "bvalue", cn);
+        assertEquals("Column type check", Types.BOOLEAN, result.getInt("DATA_TYPE"));
+        assertTrue("Make sure we have found second column", result.next());
+        cn = result.getString("COLUMN_NAME");
+        System.out.println("Found column       :   " + cn);
+        assertEquals("Column name check", "ivalue", cn);
+        assertEquals("Column type check", Types.INTEGER, result.getInt("DATA_TYPE"));
+
+        // make sure we filter
+        result = md.getColumns(con.getCatalog(), KEYSPACE, TABLE, "bvalue");
+        result.next();
+        assertFalse("Make sure we have found requested column only", result.next());
+    }    
+    
+    @Test
+    public void testIssue59() throws Exception
+    {
+        Statement stmt = con.createStatement();
+        
+        // Create the target Column family
+        String createCF = "CREATE COLUMNFAMILY t59 (k int PRIMARY KEY," 
+                        + "c text "
+                        + ") ;";        
+        
+        stmt.execute(createCF);
+        stmt.close();
+        con.close();
+
+        // open it up again to see the new CF
+        con = DriverManager.getConnection(String.format("jdbc:cassandra://%s:%d/%s",HOST,PORT,KEYSPACE));
+ 
+        PreparedStatement statement = con.prepareStatement("update t59 set c=? where k=123", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+        statement.setString(1, "hello");
+        statement.executeUpdate();
+
+        ResultSet result = statement.executeQuery("SELECT * FROM t59;");
+        
+        System.out.println(resultToDisplay(result,59,null));
+
+    }
+    
+    @Test
+    public void testIssue65() throws Exception
+    {
+        Statement stmt = con.createStatement();
+        
+        // Create the target Column family
+        String createCF = "CREATE COLUMNFAMILY t65 (key text PRIMARY KEY," 
+                        + "int1 int, "
+                        + "int2 int, "
+                        + "intset  set<int> "
+                        + ") ;";        
+        
+        stmt.execute(createCF);
+        stmt.close();
+        con.close();
+
+        // open it up again to see the new CF
+        con = DriverManager.getConnection(String.format("jdbc:cassandra://%s:%d/%s",HOST,PORT,KEYSPACE));
+        
+        Statement statement = con.createStatement();
+        String insert = "INSERT INTO t65 (key, int1,int2,intset) VALUES ('key1',1,100,{10,20,30,40});";
+        statement.executeUpdate(insert);
+        
+        ResultSet result = statement.executeQuery("SELECT * FROM t65;");
+
+        System.out.println(resultToDisplay(result,65, "with set = {10,20,30,40}"));
+       
+        String update = "UPDATE t65 SET intset=? WHERE key=?;";
+ 
+        PreparedStatement pstatement = con.prepareStatement(update);
+        Set<Integer> mySet = new HashSet<Integer> ();
+        pstatement.setObject(1, mySet, Types.OTHER);
+        pstatement.setString(2, "key1");
+       
+        pstatement.executeUpdate();
+
+        result = statement.executeQuery("SELECT * FROM t65;");
+        
+        System.out.println(resultToDisplay(result,65," with set = <empty>"));
+
+    }
+    
+    @Test
+    public void testIssue74() throws Exception
+    {
+        Statement stmt = con.createStatement();
+        java.util.Date now = new java.util.Date();
+
+        
+        // Create the target Column family
+        String createCF = "CREATE COLUMNFAMILY t74 (id BIGINT PRIMARY KEY, col1 TIMESTAMP)";        
+        
+        stmt.execute(createCF);
+        stmt.close();
+        con.close();
+
+        // open it up again to see the new CF
+        con = DriverManager.getConnection(String.format("jdbc:cassandra://%s:%d/%s",HOST,PORT,KEYSPACE));
+        
+        Statement statement = con.createStatement();
+        
+        String insert = "INSERT INTO t74 (id, col1) VALUES (?, ?);";
+        
+        PreparedStatement pstatement = con.prepareStatement(insert);
+        pstatement.setLong(1, 1L); 
+        pstatement.setObject(2, new Timestamp(now.getTime()),Types.TIMESTAMP);
+        pstatement.execute();
+
+        ResultSet result = statement.executeQuery("SELECT * FROM t74;");
+        
+        assertTrue(result.next());
+        assertEquals(1L, result.getLong(1));
+        Timestamp stamp = result.getTimestamp(2);
+        
+        assertEquals(now, stamp);
+        stamp = (Timestamp)result.getObject(2); // maybe exception here
+        assertEquals(now, stamp);
+
+        System.out.println(resultToDisplay(result,74, "current date"));
+       
+    }
+    
+    @Test
+    public void testIssue75() throws Exception
+    {
+        System.out.println();
+        System.out.println("Test Issue #75");
+        System.out.println("--------------");
+
+        Statement stmt = con.createStatement();
+        String select = "select ivalue from "+TABLE;
+
+        ResultSet result = stmt.executeQuery(select);
+        assertFalse("Make sure we have no rows", result.next());
+        ResultSetMetaData rsmd = result.getMetaData();
+        assertTrue("Make sure we do get a result", rsmd.getColumnDisplaySize(1) != 0);
+        assertNotNull("Make sure we do get a label",rsmd.getColumnLabel(1));
+        System.out.println("Found a column in ResultsetMetaData even when there are no rows:   " + rsmd.getColumnLabel(1));
+        stmt.close();
+        con.close();
+    }
 
     @Test
     public void isValid() throws Exception
@@ -276,12 +457,34 @@ public class JdbcRegressionTest
         ((CassandraConnection) con).isAlive = currentStatement;
     }
     
-    
     private final String  showColumn(int index, ResultSet result) throws SQLException
     {
         StringBuilder sb = new StringBuilder();
         sb.append("[").append(index).append("]");
         sb.append(result.getObject(index));
         return sb.toString();
+    }
+    
+    private final String resultToDisplay(ResultSet result, int issue, String note) throws Exception
+    {
+        StringBuilder sb = new StringBuilder("Test Issue #" + issue + " - "+ note + "\n");
+       ResultSetMetaData metadata = result.getMetaData();
+        
+        int colCount = metadata.getColumnCount();
+        
+        sb.append("--------------").append("\n");
+        while (result.next())
+        {
+            metadata = result.getMetaData();
+            colCount = metadata.getColumnCount();
+            sb.append(String.format("(%d) ",result.getRow()));
+            for (int i = 1; i <= colCount; i++)
+            {
+                sb.append(showColumn(i,result)+ " "); 
+            }
+            sb.append("\n");
+        }
+        
+        return sb.toString();        
     }
 }
