@@ -1147,8 +1147,10 @@ class CassandraResultSet extends AbstractResultSet implements CassandraResultSet
         AbstractJdbcType<?> keyType = null;
         CollectionType type = CollectionType.NOT_COLLECTION;
         String nameType = schema.name_types.get(column.name);
+        //by ZhongYu: Fix A bug here
+        if (nameType == null) nameType = schema.default_name_type;
         if (nameType == null) nameType = "AsciiType";
-        AbstractJdbcType<?> comparator = TypesMap.getTypeForComparator(nameType == null ? schema.default_name_type : nameType);
+        AbstractJdbcType<?> comparator = TypesMap.getTypeForComparator(nameType);
         String valueType = schema.value_types.get(column.name);
         AbstractJdbcType<?> validator = TypesMap.getTypeForComparator(valueType == null ? schema.default_value_type : valueType);
         if (validator == null)
