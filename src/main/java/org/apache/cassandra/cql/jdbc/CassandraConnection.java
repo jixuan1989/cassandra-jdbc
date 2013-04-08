@@ -157,8 +157,6 @@ class CassandraConnection extends AbstractConnection implements Connection
         {
             throw new SQLNonTransientConnectionException(e);
         }
-        //by ZhongYu: ignore old version's Exception
-        /*
         catch (AuthenticationException e)
         {
             throw new SQLInvalidAuthorizationSpecException(e);
@@ -167,7 +165,6 @@ class CassandraConnection extends AbstractConnection implements Connection
         {
             throw new SQLInvalidAuthorizationSpecException(e);
         }
-        */
     }
     
     // get the Major portion of a string like : Major.minor.patch where 2 is the default
