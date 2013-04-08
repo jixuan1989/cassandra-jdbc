@@ -124,7 +124,7 @@ import org.slf4j.LoggerFactory;
  * </table>
  * 
  */
-class CassandraResultSet extends AbstractResultSet implements CassandraResultSetExtras
+public class CassandraResultSet extends AbstractResultSet implements CassandraResultSetExtras
 {
     private static final Logger logger = LoggerFactory.getLogger(CassandraResultSet.class);
 
@@ -1064,7 +1064,6 @@ class CassandraResultSet extends AbstractResultSet implements CassandraResultSet
         // the rationale is there are no warnings to return in this implementation...
         return null;
     }
-
 
     public boolean isAfterLast() throws SQLException
     {
